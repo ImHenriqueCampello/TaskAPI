@@ -39,6 +39,8 @@ services:
 
   api:
     image: ${DOCKERHUB_REPO:-joaolucenalima/taskapi}:latest
+    # A imagem publicada atualmente suporta apenas AMD64.
+    platform: linux/amd64
     restart: unless-stopped
     ports:
       - "8000:8000"
