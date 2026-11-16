@@ -236,9 +236,16 @@ O Jenkins executa tudo em um container: o controller coordena os builds e seu ex
 1. Inicie com `docker compose -f jenkins/docker-compose.yml up -d --build`. No Linux, defina `DOCKER_GID` com `stat -c %g /var/run/docker.sock`.
 2. Acesse `http://localhost:8080` e configure o Jenkins.
 3. Crie um job Pipeline from SCM para `main` e `Jenkinsfile`. Cadastre `taskapi-test-database-url` como credencial Secret text.
+
 4. Configure o webhook GitHub em `https://<url-publica-https>/github-webhook/` ou execute manualmente.
 
 O container acessa o Docker do host pelo socket montado. Desligue com `docker compose -f jenkins/docker-compose.yml down`.
+
+### Publicação no Docker Hub
+
+O pipeline publica `joaolucenalima/taskapi:latest` somente em builds da branch `main`, depois da validação, dos testes e do build da imagem. Builds de pull request e de outras branches não publicam.
+
+No Jenkins, cadastre uma credencial do tipo **Username with password** com o ID `dockerhub-credentials`. Use o usuário do Docker Hub e um token de acesso com permissão de escrita no repositório [joaolucenalima/taskapi](https://hub.docker.com/r/joaolucenalima/taskapi). O token é usado apenas no estágio de publicação e não deve ser salvo no repositório.
 
 ---
 

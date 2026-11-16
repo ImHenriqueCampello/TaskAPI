@@ -20,7 +20,10 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                script {
+                    def scmVars = checkout scm
+                    env.CHECKED_OUT_BRANCH = scmVars.GIT_BRANCH ?: env.GIT_BRANCH ?: ''
+                }
                 sh 'rm -rf reports && mkdir -p reports'
             }
         }
@@ -69,6 +72,32 @@ pipeline {
                     env.SHORT_COMMIT = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
                 }
                 sh 'docker build --target runtime -t taskapi:${BUILD_NUMBER}-${SHORT_COMMIT} .'
+            }
+        }
+        stage('Publish Docker Hub') {
+            when {
+                expression {
+                    def branch = (env.BRANCH_NAME ?: env.CHECKED_OUT_BRANCH ?: '').trim()
+                    return !env.CHANGE_ID && (branch == 'main' || branch == 'origin/main')
+                }
+            }
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-credentials',
+                    usernameVariable: 'DOCKERHUB_USERNAME',
+                    passwordVariable: 'DOCKERHUB_TOKEN'
+                )]) {
+                    sh '''
+                        set -eu
+                        set +x
+                        docker_config="$(mktemp -d)"
+                        trap 'docker --config "$docker_config" logout >/dev/null 2>&1 || true; rm -rf "$docker_config"' EXIT
+                        export DOCKER_CONFIG="$docker_config"
+                        printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
+                        docker tag "taskapi:${BUILD_NUMBER}-${SHORT_COMMIT}" joaolucenalima/taskapi:latest
+                        docker push joaolucenalima/taskapi:latest
+                    '''
+                }
             }
         }
     }
