@@ -1,6 +1,45 @@
+# Stack completa do projeto: 4 containers
+#   jenkins  -> construído pelo Dockerfile LOCAL (./jenkins)
+#   api      -> imagem baixada do DOCKER HUB (publicada pelo pipeline)
+#   postgres -> banco de dados (volume persistente)
+#   adminer  -> interface web para o banco
+# Uso: cp .env.example .env && docker compose up -d --build
 services:
+  jenkins:
+    build: ./jenkins
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-0}"
+    environment:
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false"
+      JENKINS_ADMIN_ID: ${JENKINS_ADMIN_ID:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:?Defina JENKINS_ADMIN_PASSWORD no .env}
+      GIT_REPO_URL: ${GIT_REPO_URL:-https://github.com/ImHenriqueCampello/TaskAPI.git}
+      # Banco usado pelos testes do pipeline (comunica com o container postgres)
+      TEST_DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/tasks_test
+      # Docker Hub
+      DOCKERHUB_REPO: ${DOCKERHUB_REPO:-joaolucenalima/taskapi}
+      DOCKERHUB_USERNAME: ${DOCKERHUB_USERNAME:-}
+      DOCKERHUB_TOKEN: ${DOCKERHUB_TOKEN:-}
+      # Notificação por e-mail (usada por scripts/notify_email.py)
+      NOTIFY_EMAIL: ${NOTIFY_EMAIL:?Defina NOTIFY_EMAIL no .env}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   api:
-    build: .
+    image: ${DOCKERHUB_REPO:-joaolucenalima/taskapi}:latest
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
@@ -11,12 +50,11 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: ${POSTGRES_DB:-tasks}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -25,21 +63,17 @@ services:
       timeout: 5s
       retries: 10
 
-  postgres-test:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: tasks_test
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
     ports:
-      - "5433:5432"
-    tmpfs:
-      - /var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      - "8081:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
 
 volumes:
+  jenkins_home:
   postgres_data:

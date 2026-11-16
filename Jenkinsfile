@@ -8,13 +8,16 @@ pipeline {
         buildDiscarder(logRotator(numToKeepStr: '20'))
     }
 
-    triggers { 
-        githubPush() 
+    triggers {
+        githubPush()
+        pollSCM('H/5 * * * *')
     }
 
     environment {
         REPORT_DIR = 'reports'
-        TEST_DATABASE_URL = credentials('taskapi-test-database-url')
+        DIST_DIR = 'dist'
+        // TEST_DATABASE_URL, NOTIFY_EMAIL, SMTP_* e DOCKERHUB_REPO vêm das variáveis de
+        // ambiente do container Jenkins (docker-compose.yml + .env), nunca fixas aqui.
     }
 
     stages {
@@ -24,7 +27,7 @@ pipeline {
                     def scmVars = checkout scm
                     env.CHECKED_OUT_BRANCH = scmVars.GIT_BRANCH ?: env.GIT_BRANCH ?: ''
                 }
-                sh 'rm -rf reports && mkdir -p reports'
+                sh 'rm -rf reports dist && mkdir -p reports dist'
             }
         }
         stage('Install') {
@@ -39,7 +42,7 @@ pipeline {
         }
         stage('Validate') {
             steps {
-                sh '.venv/bin/python -m compileall -q app'
+                sh '.venv/bin/python -m compileall -q app scripts'
             }
         }
         stage('Test') {
@@ -47,7 +50,7 @@ pipeline {
                 sh '''
                     set -eu
                     .venv/bin/python -m pytest -v --junitxml="$REPORT_DIR/junit.xml" \
-                      --cov=app --cov-report=term-missing \
+                      --cov=app --cov=scripts --cov-report=term-missing \
                       --cov-report=xml:"$REPORT_DIR/coverage.xml" \
                       --cov-report=html:"$REPORT_DIR/html" --cov-fail-under=90
                 '''
@@ -72,6 +75,8 @@ pipeline {
                     env.SHORT_COMMIT = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
                 }
                 sh 'docker build --target runtime -t taskapi:${BUILD_NUMBER}-${SHORT_COMMIT} .'
+                // Pacote da aplicação (artefato): código + dependências + Dockerfile
+                sh 'tar czf "$DIST_DIR/taskapi-${BUILD_NUMBER}-${SHORT_COMMIT}.tar.gz" app requirements.txt Dockerfile'
             }
         }
         stage('Publish Docker Hub') {
@@ -93,9 +98,12 @@ pipeline {
                         docker_config="$(mktemp -d)"
                         trap 'docker --config "$docker_config" logout >/dev/null 2>&1 || true; rm -rf "$docker_config"' EXIT
                         export DOCKER_CONFIG="$docker_config"
+                        repo="${DOCKERHUB_REPO:-joaolucenalima/taskapi}"
                         printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin
-                        docker tag "taskapi:${BUILD_NUMBER}-${SHORT_COMMIT}" joaolucenalima/taskapi:latest
-                        docker push joaolucenalima/taskapi:latest
+                        docker tag "taskapi:${BUILD_NUMBER}-${SHORT_COMMIT}" "$repo:latest"
+                        docker tag "taskapi:${BUILD_NUMBER}-${SHORT_COMMIT}" "$repo:${BUILD_NUMBER}-${SHORT_COMMIT}"
+                        docker push "$repo:latest"
+                        docker push "$repo:${BUILD_NUMBER}-${SHORT_COMMIT}"
                     '''
                 }
             }
@@ -104,7 +112,30 @@ pipeline {
 
     post {
         always {
-            archiveArtifacts artifacts: 'reports/**', allowEmptyArchive: true, fingerprint: true
+            // Pacote (dist/) e relatórios de teste (reports/) ficam como artefatos do build
+            archiveArtifacts artifacts: 'reports/**, dist/**', allowEmptyArchive: true, fingerprint: true
+            script {
+                // Etapa de notificação: roda mesmo quando o pipeline falha.
+                // O destinatário vem da variável de ambiente NOTIFY_EMAIL (não é hardcoded).
+                stage('Notificação por e-mail') {
+                    try {
+                        sh """
+                            python3 scripts/notify_email.py \
+                              --status "${currentBuild.currentResult}" \
+                              --job "${env.JOB_NAME}" \
+                              --build "${env.BUILD_NUMBER}" \
+                              --url "${env.BUILD_URL}" \
+                              --commit "${env.SHORT_COMMIT ?: 'n/a'}" \
+                              --branch "${env.CHECKED_OUT_BRANCH ?: 'n/a'}"
+                        """
+                    } catch (err) {
+                        // Falha no envio não deve reprovar o build
+                        echo "Não foi possível enviar o e-mail: ${err}"
+                    }
+                }
+            }
+        }
+        cleanup {
             cleanWs()
         }
     }

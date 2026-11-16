@@ -5,9 +5,9 @@ API REST simples, robusta e eficiente para gerenciamento de tarefas (To-Do API),
 Nesta etapa do projeto, o foco foi desenvolver exclusivamente:
 - A aplicação FastAPI e seus três endpoints fundamentais.
 - A persistência de dados utilizando PostgreSQL definitivo e SQLAlchemy.
-- A orquestração do banco de dados PostgreSQL via Docker Compose.
+- A orquestração via Docker Compose (API, PostgreSQL, Adminer e Jenkins).
 - A suíte completa de testes automatizados com Pytest utilizando um banco de testes isolado (`tasks_test`).
-- Cobertura de testes superior a 90% (atingindo **100% de cobertura** do código da aplicação).
+- Cobertura de testes superior a 90% (**100%** em `app/` e ~99% somando `scripts/`).
 
 ---
 
@@ -42,7 +42,13 @@ TaskAPI/
 │   ├── test_list_tasks.py   # Testes de listagem de tarefas
 │   └── test_update_task.py  # Testes de atualização de status (PATCH)
 │
-├── docker-compose.yml   # Definição do serviço PostgreSQL em container
+├── scripts/
+│   └── notify_email.py  # Envio do e-mail de resumo do pipeline (SMTP via variáveis de ambiente)
+├── jenkins/             # Dockerfile, plugins e casc.yaml (Jenkins como código)
+├── Dockerfile           # Imagem da API
+├── Jenkinsfile          # Pipeline (testes, build, Docker Hub, e-mail)
+├── docker-compose.yml   # Stack de 4 containers (jenkins, api, postgres, adminer)
+├── docker-compose.dev.yml  # Apenas bancos de dados para desenvolvimento local
 ├── requirements.txt     # Dependências da aplicação
 ├── .env                 # Variáveis de ambiente locais (não versionado)
 ├── .env.example         # Modelo de configuração de variáveis de ambiente
@@ -103,13 +109,13 @@ O PostgreSQL é executado em container com porta 5432 exposta, volume nomeado pa
 ### Subir o container PostgreSQL
 
 ```bash
-docker compose up -d
+docker compose -f docker-compose.dev.yml up -d
 ```
 
 Verifique se o container está rodando e saudável:
 
 ```bash
-docker compose ps
+docker compose -f docker-compose.dev.yml ps
 ```
 
 ### Criar o banco de dados de testes (`tasks_test`)
@@ -117,7 +123,7 @@ docker compose ps
 Para garantir que os testes não afetem a base de dados de desenvolvimento, crie a base separada:
 
 ```bash
-docker compose exec postgres psql -U postgres -c "CREATE DATABASE tasks_test;"
+docker compose -f docker-compose.dev.yml exec postgres psql -U postgres -c "CREATE DATABASE tasks_test;"
 ```
 
 > **Nota:** As fixtures do Pytest também realizam a verificação e criação automática do banco `tasks_test` caso ele ainda não tenha sido criado manualmente.
@@ -223,29 +229,62 @@ pytest --cov=app --cov-report=term-missing
 ### Validar cobertura mínima de 90% (critério de aprovação)
 
 ```bash
-pytest --cov=app --cov-report=term-missing --cov-fail-under=90
+pytest --cov=app --cov=scripts --cov-report=term-missing --cov-fail-under=90
 ```
 
-## Jenkins CI
+## 🚀 Stack completa com Docker Compose (4 containers)
 
-O pipeline instala dependências, valida a sintaxe, executa testes com cobertura
-mínima de 90% e constrói a imagem. JUnit e cobertura ficam nos relatórios do build.
+O `docker-compose.yml` sobe toda a cadeia DevOps:
 
-O Jenkins executa tudo em um container: o controller coordena os builds e seu executor instala dependências, roda testes e constrói a imagem.
+| Container | Origem | Função |
+|-----------|--------|--------|
+| `jenkins` | **Dockerfile local** (`./jenkins`) | CI/CD: roda testes, build, publicação e e-mail |
+| `api` | **Docker Hub** (`joaolucenalima/taskapi`) | API FastAPI de tarefas |
+| `postgres` | `postgres:16-alpine` | Banco de dados (volume `postgres_data`) |
+| `adminer` | `adminer` | Visualização/administração do banco |
 
-1. Inicie com `docker compose -f jenkins/docker-compose.yml up -d --build`. No Linux, defina `DOCKER_GID` com `stat -c %g /var/run/docker.sock`.
-2. Acesse `http://localhost:8080` e configure o Jenkins.
-3. Crie um job Pipeline from SCM para `main` e `Jenkinsfile`. Cadastre `taskapi-test-database-url` como credencial Secret text.
+**Comunicação entre containers** (rede padrão do Compose, por nome de serviço): `api → postgres`, `adminer → postgres` e `jenkins → postgres` (os testes do pipeline usam `postgres:5432/tasks_test`).
 
-4. Configure o webhook GitHub em `https://<url-publica-https>/github-webhook/` ou execute manualmente.
+**Volumes:** `postgres_data` (dados do banco) e `jenkins_home` (jobs, histórico e **artefatos** do Jenkins).
 
-O container acessa o Docker do host pelo socket montado. Desligue com `docker compose -f jenkins/docker-compose.yml down`.
+### Como executar
 
-### Publicação no Docker Hub
+```bash
+cp .env.example .env      # edite senhas, NOTIFY_EMAIL, SMTP_* e credenciais do Docker Hub
+# Linux: coloque em DOCKER_GID o resultado de: stat -c %g /var/run/docker.sock
+docker compose up -d --build
+```
 
-O pipeline publica `joaolucenalima/taskapi:latest` somente em builds da branch `main`, depois da validação, dos testes e do build da imagem. Builds de pull request e de outras branches não publicam.
+- Jenkins: http://localhost:8080 (usuário/senha do `.env`) — o job `taskapi` já nasce configurado
+- API: http://localhost:8000/docs
+- Adminer: http://localhost:8081 (sistema PostgreSQL, servidor `postgres`)
 
-No Jenkins, cadastre uma credencial do tipo **Username with password** com o ID `dockerhub-credentials`. Use o usuário do Docker Hub e um token de acesso com permissão de escrita no repositório [joaolucenalima/taskapi](https://hub.docker.com/r/joaolucenalima/taskapi). O token é usado apenas no estágio de publicação e não deve ser salvo no repositório.
+Para desenvolvimento só com bancos locais (sem Jenkins): `docker compose -f docker-compose.dev.yml up -d`.
+
+## 🔧 Jenkins CI (infraestrutura como código)
+
+Nada é configurado pela interface gráfica. O `jenkins/casc.yaml` (Jenkins Configuration as Code) cria o usuário admin, a credencial do Docker Hub (a partir do `.env`) e o job `taskapi`, que apenas faz o **checkout** do repositório e executa o `Jenkinsfile`. Todo software necessário (Python, Docker CLI, plugins) é instalado pelo `jenkins/Dockerfile`.
+
+Etapas do `Jenkinsfile`:
+
+1. **Checkout** → 2. **Install** (venv + dependências) → 3. **Validate** (`compileall`)
+4. **Test** — `pytest` com cobertura mínima de 90% (`--cov-fail-under=90`), gera `junit.xml` e relatório HTML
+5. **Build** — `docker build` da imagem e empacotamento `dist/taskapi-<build>-<commit>.tar.gz`
+6. **Publish Docker Hub** — apenas na branch `main`; envia as tags `latest` e `<build>-<commit>`
+7. **Notificação por e-mail** — roda sempre (sucesso ou falha) via `scripts/notify_email.py`
+
+**Artefatos do Jenkins:** `dist/**` (pacote) e `reports/**` (JUnit, cobertura XML/HTML) são arquivados em cada build.
+
+### Variáveis de ambiente (nada hardcoded)
+
+| Variável | Uso |
+|----------|-----|
+| `NOTIFY_EMAIL` | Destinatário(s) do e-mail do pipeline (obrigatória) |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Servidor SMTP (ex.: Gmail com senha de app) |
+| `TEST_DATABASE_URL` | Banco usado nos testes do pipeline |
+| `DOCKERHUB_REPO`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Publicação no Docker Hub |
+
+Docker Hub: https://hub.docker.com/r/joaolucenalima/taskapi
 
 ---
 
@@ -277,3 +316,20 @@ No desenvolvimento deste projeto, foram utilizadas ferramentas de Inteligência 
 - **ChatGPT**: Utilizado para *brainstorming* e concepção inicial das ideias do projeto.
 - **Gemini 3.8 Flash**: Utilizado como assistente no desenvolvimento da API, configuração dos testes e documentação.
 - **Codex**: Implementação do processo do Jenkins e configuração dos arquivos do Docker
+
+### Detalhamento exigido pela NP2
+
+> ⚠️ **Preencham os itens marcados com `PREENCHER` com a realidade do grupo antes da defesa.** O professor pede exemplos reais de prompts e honestidade total.
+
+- **Modelos utilizados:** ChatGPT, Gemini, Codex e Claude (este último na etapa final: e-mail, empacotamento, compose de 4 containers e JCasC).
+- **Para quê foram usados:** Dockerfile e Jenkinsfile (Codex), API/testes/documentação (Gemini), script de e-mail, `docker-compose.yml` completo e `casc.yaml` (Claude).
+- **Exemplos de prompts (mínimo 3) e destino das respostas:**
+
+| # | Prompt real (PREENCHER) | Resultado |
+|---|--------------------------|-----------|
+| 1 | PREENCHER | aceito / ajustado / descartado |
+| 2 | PREENCHER | aceito / ajustado / descartado |
+| 3 | PREENCHER | aceito / ajustado / descartado |
+
+- **Dinâmica de uso:** PREENCHER (individual? pair programming? revisão de configurações?).
+- **O que foi feito "à mão":** PREENCHER (ex.: revisão do Jenkinsfile, ajuste de variáveis, testes manuais do pipeline).

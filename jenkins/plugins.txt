@@ -5,3 +5,6 @@ credentials-binding
 junit
 htmlpublisher
 ws-cleanup
+timestamper
+configuration-as-code
+job-dsl
