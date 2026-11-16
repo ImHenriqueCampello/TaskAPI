@@ -1,294 +1,53 @@
 # To-Do API - Gerenciamento de Tarefas
 
-API REST simples, robusta e eficiente para gerenciamento de tarefas (To-Do API), desenvolvida para a disciplina de **Gerência de Configuração e Evolução de Software**.
+API REST para criar, listar e atualizar a conclusão de tarefas, desenvolvida para a disciplina de **Gerência de Configuração e Evolução de Software**.
 
-Nesta etapa do projeto, o foco foi desenvolver exclusivamente:
-- A aplicação FastAPI e seus três endpoints fundamentais.
-- A persistência de dados utilizando PostgreSQL definitivo e SQLAlchemy.
-- A orquestração via Docker Compose (API, PostgreSQL, Adminer e Jenkins).
-- A suíte completa de testes automatizados com Pytest utilizando um banco de testes isolado (`tasks_test`).
-- Cobertura de testes superior a 90% (**100%** em `app/` e ~99% somando `scripts/`).
+Imagem no Docker Hub: [joaolucenalima/taskapi](https://hub.docker.com/r/joaolucenalima/taskapi).
 
----
+## Tecnologias
 
-## 🛠️ Tecnologias Utilizadas
+Python, FastAPI, PostgreSQL, SQLAlchemy, Docker Compose, Jenkins, Pytest e pytest-cov.
 
-- **[Python](https://www.python.org/)**: Linguagem de programação principal.
-- **[FastAPI](https://fastapi.tiangolo.com/)**: Framework web moderno, assíncrono e de alto desempenho.
-- **[PostgreSQL](https://www.postgresql.org/)**: Banco de dados relacional oficial.
-- **[SQLAlchemy](https://www.sqlalchemy.org/)**: ORM para comunicação e modelagem de banco de dados.
-- **[Docker](https://www.docker.com/) & [Docker Compose](https://docs.docker.com/compose/)**: Containerização e isolamento do PostgreSQL.
-- **[Pytest](https://docs.pytest.org/)**: Framework para testes automatizados.
-- **[pytest-cov](https://pytest-cov.readthedocs.io/)**: Ferramenta de análise e relatório de cobertura de código.
+## Preparação
 
----
-
-## 📁 Estrutura do Projeto
-
-```
-TaskAPI/
-│
-├── app/
-│   ├── __init__.py
-│   ├── main.py          # Ponto de entrada FastAPI e ciclo de vida
-│   ├── database.py      # Configuração do SQLAlchemy e conexão com PostgreSQL
-│   ├── models.py        # Modelos ORM (SQLAlchemy) e esquemas de validação (Pydantic)
-│   └── routes.py        # Definição e lógica dos três endpoints da API
-│
-├── tests/
-│   ├── __init__.py
-│   ├── conftest.py          # Fixtures do Pytest, isolamento e limpeza de banco
-│   ├── test_create_task.py  # Testes de criação e validação de tarefas
-│   ├── test_list_tasks.py   # Testes de listagem de tarefas
-│   └── test_update_task.py  # Testes de atualização de status (PATCH)
-│
-├── scripts/
-│   └── notify_email.py  # Envio do e-mail de resumo do pipeline (SMTP via variáveis de ambiente)
-├── jenkins/             # Dockerfile, plugins e casc.yaml (Jenkins como código)
-├── Dockerfile           # Imagem da API
-├── Jenkinsfile          # Pipeline (testes, build, Docker Hub, e-mail)
-├── docker-compose.yml   # Stack de 4 containers (jenkins, api, postgres, adminer)
-├── docker-compose.dev.yml  # Apenas bancos de dados para desenvolvimento local
-├── requirements.txt     # Dependências da aplicação
-├── .env                 # Variáveis de ambiente locais (não versionado)
-├── .env.example         # Modelo de configuração de variáveis de ambiente
-├── .gitignore           # Regras de exclusão do controle de versão
-└── README.md            # Documentação completa do projeto
-```
-
----
-
-## ⚙️ Configuração e Instalação
-
-### 1. Clonar ou Acessar o Repositório
+Pré-requisitos: Git, Docker e Docker Compose. Para executar o Pytest, instale também Python 3.12. Os comandos abaixo usam um terminal Bash ou Zsh.
 
 ```bash
-cd "/home/rick/Documents/IdeaProjects/PyCharm Projects/TaskAPI"
+git clone https://github.com/ImHenriqueCampello/TaskAPI.git
+cd TaskAPI
+cp .env.example .env
 ```
 
-### 2. Configurar o Ambiente Virtual (venv)
+Se já tiver o repositório, abra um terminal na pasta do projeto. Copie o `.env.example` apenas se ainda não houver um `.env`.
+
+No `.env`, ajuste a conexão do banco de testes para a porta **5433**:
+
+```env
+TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/tasks_test
+```
+
+Se alterou o usuário ou a senha do PostgreSQL, ajuste também as credenciais dessa URL. Escolha o fluxo abaixo conforme a atividade.
+
+## Testes
+
+Crie e ative o ambiente virtual e instale as dependências:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+python -m pip install -r requirements.txt
 ```
 
-### 3. Instalar as Dependências
+Suba somente o banco de testes e execute o Pytest:
 
 ```bash
-pip install -r requirements.txt
+docker compose -f docker-compose.dev.yml up -d --wait postgres-test
+python -m pytest --cov=app --cov=scripts --cov-report=term-missing --cov-fail-under=90
 ```
 
-### 4. Configurar as Variáveis de Ambiente
+O serviço cria o banco temporário `tasks_test`, separado do banco da aplicação. As fixtures limpam as tarefas e reiniciam a sequência de IDs entre os testes. O Pytest inicia a API internamente pelo `TestClient`, sem precisar de um servidor separado, e exige cobertura mínima de **90%**.
 
-Copie o arquivo de exemplo `.env.example` para `.env`:
-
-```bash
-cp .env.example .env
-```
-
-Conteúdo padrão do arquivo `.env`:
-
-```env
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=tasks
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tasks
-TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/tasks_test
-```
-
----
-
-## 🐳 Inicialização do Banco de Dados (Docker Compose)
-
-O PostgreSQL é executado em container com porta 5432 exposta, volume nomeado para persistência e verificação de integridade (*healthcheck*).
-
-### Subir o container PostgreSQL
-
-```bash
-docker compose -f docker-compose.dev.yml up -d
-```
-
-Verifique se o container está rodando e saudável:
-
-```bash
-docker compose -f docker-compose.dev.yml ps
-```
-
-### Criar o banco de dados de testes (`tasks_test`)
-
-Para garantir que os testes não afetem a base de dados de desenvolvimento, crie a base separada:
-
-```bash
-docker compose -f docker-compose.dev.yml exec postgres psql -U postgres -c "CREATE DATABASE tasks_test;"
-```
-
-> **Nota:** As fixtures do Pytest também realizam a verificação e criação automática do banco `tasks_test` caso ele ainda não tenha sido criado manualmente.
-
----
-
-## 🚀 Executando a API
-
-Com o banco de dados em execução e o ambiente virtual ativado:
-
-```bash
-uvicorn app.main:app --reload --port 8000
-```
-
-A API estará acessível em: `http://localhost:8000`  
-Documentação interativa Swagger UI: `http://localhost:8000/docs`
-
----
-
-## 📡 Endpoints da API
-
-A API possui estritamente três endpoints, conforme especificado:
-
-### 1. Criar tarefa
-- **Método**: `POST /tasks`
-- **Status HTTP**: `201 Created`
-- **Regras**: Título obrigatório, não vazio e não composto apenas de espaços. A tarefa sempre inicia com `completed = false`.
-- **Exemplo de Requisição**:
-  ```bash
-  curl -X POST http://localhost:8000/tasks \
-    -H "Content-Type: application/json" \
-    -d '{"title": "Estudar Docker"}'
-  ```
-- **Resposta**:
-  ```json
-  {
-    "id": 1,
-    "title": "Estudar Docker",
-    "completed": false
-  }
-  ```
-
----
-
-### 2. Listar tarefas
-- **Método**: `GET /tasks`
-- **Status HTTP**: `200 OK`
-- **Regras**: Retorna a lista de todas as tarefas cadastradas ordenadas por ID. Se não houver tarefas, retorna `[]`.
-- **Exemplo de Requisição**:
-  ```bash
-  curl -X GET http://localhost:8000/tasks
-  ```
-- **Resposta**:
-  ```json
-  [
-    {
-      "id": 1,
-      "title": "Estudar Docker",
-      "completed": false
-    }
-  ]
-  ```
-
----
-
-### 3. Atualizar conclusão da tarefa
-- **Método**: `PATCH /tasks/{id}`
-- **Status HTTP**: `200 OK` (se encontrada) ou `404 Not Found` (se não existir)
-- **Regras**: Altera estritamente o campo `completed` (`true` ou `false`). Não permite modificar título ou outros campos.
-- **Exemplo de Requisição**:
-  ```bash
-  curl -X PATCH http://localhost:8000/tasks/1 \
-    -H "Content-Type: application/json" \
-    -d '{"completed": true}'
-  ```
-- **Resposta**:
-  ```json
-  {
-    "id": 1,
-    "title": "Estudar Docker",
-    "completed": true
-  }
-  ```
-
----
-
-## 🧪 Testes Automatizados e Cobertura
-
-Os testes utilizam exclusivamente PostgreSQL através da base `tasks_test`. Cada teste é isolado por fixtures que limpam e resetam as sequências (`TRUNCATE TABLE tasks RESTART IDENTITY CASCADE`).
-
-### Executar a suíte de testes
-
-```bash
-pytest -v
-```
-
-### Executar com relatório de cobertura
-
-```bash
-pytest --cov=app --cov-report=term-missing
-```
-
-### Validar cobertura mínima de 90% (critério de aprovação)
-
-```bash
-pytest --cov=app --cov=scripts --cov-report=term-missing --cov-fail-under=90
-```
-
-## 🚀 Stack completa com Docker Compose (4 containers)
-
-O `docker-compose.yml` sobe toda a cadeia DevOps:
-
-| Container | Origem | Função |
-|-----------|--------|--------|
-| `jenkins` | **Dockerfile local** (`./jenkins`) | CI/CD: roda testes, build, publicação e e-mail |
-| `api` | **Docker Hub** (`joaolucenalima/taskapi`) | API FastAPI de tarefas |
-| `postgres` | `postgres:16-alpine` | Banco de dados (volume `postgres_data`) |
-| `adminer` | `adminer` | Visualização/administração do banco |
-
-**Comunicação entre containers** (rede padrão do Compose, por nome de serviço): `api → postgres`, `adminer → postgres` e `jenkins → postgres` (os testes do pipeline usam `postgres:5432/tasks_test`).
-
-**Volumes:** `postgres_data` (dados do banco) e `jenkins_home` (jobs, histórico e **artefatos** do Jenkins).
-
-### Como executar
-
-```bash
-cp .env.example .env      # edite senhas, NOTIFY_EMAIL, SMTP_* e credenciais do Docker Hub
-# Linux: coloque em DOCKER_GID o resultado de: stat -c %g /var/run/docker.sock
-docker compose up -d --build
-```
-
-- Jenkins: http://localhost:8080 (usuário/senha do `.env`) — o job `taskapi` já nasce configurado
-- API: http://localhost:8000/docs
-- Adminer: http://localhost:8081 (sistema PostgreSQL, servidor `postgres`)
-
-Para desenvolvimento só com bancos locais (sem Jenkins): `docker compose -f docker-compose.dev.yml up -d`.
-
-## 🔧 Jenkins CI (infraestrutura como código)
-
-Nada é configurado pela interface gráfica. O `jenkins/casc.yaml` (Jenkins Configuration as Code) cria o usuário admin, a credencial do Docker Hub (a partir do `.env`) e o job `taskapi`, que apenas faz o **checkout** do repositório e executa o `Jenkinsfile`. Todo software necessário (Python, Docker CLI, plugins) é instalado pelo `jenkins/Dockerfile`.
-
-Etapas do `Jenkinsfile`:
-
-1. **Checkout** → 2. **Install** (venv + dependências) → 3. **Validate** (`compileall`)
-4. **Test** — `pytest` com cobertura mínima de 90% (`--cov-fail-under=90`), gera `junit.xml` e relatório HTML
-5. **Build** — `docker build` da imagem e empacotamento `dist/taskapi-<build>-<commit>.tar.gz`
-6. **Publish Docker Hub** — apenas na branch `main`; envia as tags `latest` e `<build>-<commit>`
-7. **Notificação por e-mail** — roda sempre (sucesso ou falha) via `scripts/notify_email.py`
-
-**Artefatos do Jenkins:** `dist/**` (pacote) e `reports/**` (JUnit, cobertura XML/HTML) são arquivados em cada build.
-
-### Variáveis de ambiente (nada hardcoded)
-
-| Variável | Uso |
-|----------|-----|
-| `NOTIFY_EMAIL` | Destinatário(s) do e-mail do pipeline (obrigatória) |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Servidor SMTP (ex.: Gmail com senha de app) |
-| `TEST_DATABASE_URL` | Banco usado nos testes do pipeline |
-| `DOCKERHUB_REPO`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Publicação no Docker Hub |
-
-Docker Hub: https://hub.docker.com/r/joaolucenalima/taskapi
-
----
-
-## 📋 Cenários Cobertos pelos Testes
+### Cenários cobertos pelos testes
 
 - [x] Criação de tarefa válida com ID sequencial e status inicial `completed = false`.
 - [x] Criação de tarefa sem título (validação HTTP 422).
@@ -308,12 +67,92 @@ Docker Hub: https://hub.docker.com/r/joaolucenalima/taskapi
 - [x] Garantia de que envio de novos títulos no endpoint PATCH não altera o título original.
 - [x] Teste de ciclo de vida e injeção do gerador de sessões do banco de dados (`get_db`).
 
----
+## Dev
 
-## 🤖 Uso de Inteligência Artificial
+Suba a API e o banco da aplicação pelo Docker:
+
+```bash
+docker compose -f docker-compose.dev.yml up -d --build --wait api postgres
+```
+
+Esse comando inicia somente a API na porta 8000 e o PostgreSQL da aplicação na porta 5432. Os dados da aplicação ficam em um volume persistente.
+
+Acesse a documentação interativa em [Swagger UI](http://localhost:8000/docs).
+
+## Jenkins
+
+Para executar o pipeline, o `docker-compose.yml` sobe quatro serviços:
+
+| Serviço | Origem | Função |
+|---------|--------|--------|
+| `jenkins` | Dockerfile local em `jenkins/` | Executar o pipeline |
+| `api` | Imagem do Docker Hub | Disponibilizar a API |
+| `postgres` | `postgres:16-alpine` | Armazenar os dados |
+| `adminer` | Imagem do Adminer | Consultar o banco pelo navegador |
+
+Antes de iniciar a stack completa, pare o Compose de desenvolvimento conforme o primeiro comando abaixo para liberar a porta 8000.
+
+Use o `.env` criado anteriormente e configure:
+
+| Variáveis | Finalidade |
+|-----------|------------|
+| `JENKINS_ADMIN_ID`, `JENKINS_ADMIN_PASSWORD` | Acesso ao Jenkins |
+| `GIT_REPO_URL` | Repositório utilizado pelo job |
+| `DOCKERHUB_REPO`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Repositório e credenciais para publicação |
+| `NOTIFY_EMAIL` | Destinatário(s) das notificações |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | Configuração do envio de e-mail |
+| `DOCKER_GID` | Grupo de acesso ao Docker; no Linux, use o resultado de `stat -c %g /var/run/docker.sock` |
+
+```bash
+docker compose -f docker-compose.dev.yml down
+docker compose up -d --build
+```
+
+- [Jenkins](http://localhost:8080): acesso com as credenciais do `.env`; job `taskapi` criado automaticamente.
+- [API / Swagger UI](http://localhost:8000/docs).
+- [Adminer](http://localhost:8081): selecione PostgreSQL, servidor `postgres` e credenciais do banco no `.env`.
+
+Os serviços se comunicam pelo nome na rede do Compose. Os volumes `postgres_data` e `jenkins_home` preservam os dados do banco e do Jenkins. O Compose configura o banco de testes do pipeline em `postgres:5432/tasks_test`, independentemente da URL local usada nos testes.
+
+### Pipeline
+
+O Jenkins é configurado como código por `jenkins/casc.yaml`. O `Jenkinsfile` executa:
+
+1. Checkout do repositório.
+2. Instalação das dependências em ambiente virtual.
+3. Validação com `compileall`.
+4. Testes com cobertura mínima de 90% e geração de relatórios JUnit e cobertura XML/HTML.
+5. Build da imagem Docker e do pacote `dist/taskapi-<build>-<commit>.tar.gz`.
+6. Publicação no Docker Hub somente na branch `main`, com tags `latest` e `<build>-<commit>`.
+7. Tentativa de notificação por e-mail após a execução, tanto em sucesso quanto em falha. Falhas no envio não reprovam o build.
+
+Os arquivos de `dist/` e `reports/` são arquivados como artefatos de cada build.
+
+## Endpoints
+
+| Método | Rota | Finalidade | Status HTTP |
+|--------|------|------------|-------------|
+| POST | `/tasks` | Criar tarefa com título obrigatório e `completed = false` | 201; 422 para dados inválidos |
+| GET | `/tasks` | Listar tarefas por ID; retorna `[]` se não houver tarefas | 200 |
+| PATCH | `/tasks/{id}` | Atualizar somente `completed` | 200; 404 se inexistente; 422 para dados inválidos |
+
+O título é salvo sem espaços nas bordas e não pode ser vazio. O PATCH recebe o campo `completed` e preserva o título.
+
+Exemplo de criação:
+
+```bash
+curl -X POST http://localhost:8000/tasks \
+  -H "Content-Type: application/json" \
+  -d '{"title": "Estudar Docker"}'
+```
+
+Consulte os corpos de requisição e resposta e experimente os três endpoints no [Swagger UI](http://localhost:8000/docs).
+
+## Uso de Inteligência Artificial
 
 No desenvolvimento deste projeto, foram utilizadas ferramentas de Inteligência Artificial como suporte:
+
 - **ChatGPT**: Utilizado para *brainstorming* e concepção inicial das ideias do projeto.
 - **Gemini 3.8 Flash**: Utilizado como assistente no desenvolvimento da API, configuração dos testes e documentação.
-- **Codex**: Implementação do processo do Jenkins e configuração dos arquivos do Docker
-- **Claude**: Implementação da parte de Email e junção do docker-compose.
+- **Codex**: Implementação do processo do Jenkins e configuração dos arquivos do Docker.
+- **Claude**: Implementação do envio de e-mail e integração do Docker Compose.
