@@ -9,7 +9,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
-RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
+RUN JENKINS_UC_DOWNLOAD_URL=https://archives.jenkins.io/plugins \
+    jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt
 
 # Jenkins Configuration as Code: usuário, credenciais e job definidos por arquivo (sem GUI)
 COPY casc.yaml /usr/share/jenkins/casc.yaml
