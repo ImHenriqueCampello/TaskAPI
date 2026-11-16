@@ -1,0 +1,7 @@
+workflow-aggregator
+git
+github
+credentials-binding
+junit
+htmlpublisher
+ws-cleanup
