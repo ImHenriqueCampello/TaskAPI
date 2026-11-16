@@ -226,6 +226,20 @@ pytest --cov=app --cov-report=term-missing
 pytest --cov=app --cov-report=term-missing --cov-fail-under=90
 ```
 
+## Jenkins CI
+
+O pipeline instala dependências, valida a sintaxe, executa testes com cobertura
+mínima de 90% e constrói a imagem. JUnit e cobertura ficam nos relatórios do build.
+
+O Jenkins executa tudo em um container: o controller coordena os builds e seu executor instala dependências, roda testes e constrói a imagem.
+
+1. Inicie com `docker compose -f jenkins/docker-compose.yml up -d --build`. No Linux, defina `DOCKER_GID` com `stat -c %g /var/run/docker.sock`.
+2. Acesse `http://localhost:8080` e configure o Jenkins.
+3. Crie um job Pipeline from SCM para `main` e `Jenkinsfile`. Cadastre `taskapi-test-database-url` como credencial Secret text.
+4. Configure o webhook GitHub em `https://<url-publica-https>/github-webhook/` ou execute manualmente.
+
+O container acessa o Docker do host pelo socket montado. Desligue com `docker compose -f jenkins/docker-compose.yml down`.
+
 ---
 
 ## 📋 Cenários Cobertos pelos Testes
