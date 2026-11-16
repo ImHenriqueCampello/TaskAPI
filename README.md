@@ -255,5 +255,4 @@ pytest --cov=app --cov-report=term-missing --cov-fail-under=90
 No desenvolvimento deste projeto, foram utilizadas ferramentas de Inteligência Artificial como suporte:
 - **ChatGPT**: Utilizado para *brainstorming* e concepção inicial das ideias do projeto.
 - **Gemini 3.8 Flash**: Utilizado como assistente no desenvolvimento da API, configuração dos testes e documentação.
-
-
+- **Codex**: Implementação do processo do Jenkins e configuração dos arquivos do Docker
