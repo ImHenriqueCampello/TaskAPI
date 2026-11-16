@@ -5,7 +5,9 @@ venv
 __pycache__
 .pytest_cache
 .coverage*
+coverage.xml
 htmlcov
+reports
 tests
 jenkins
 *.py[cod]
