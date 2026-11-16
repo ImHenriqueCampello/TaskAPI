@@ -3,7 +3,7 @@ FROM python:3.12-slim AS runtime
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir fastapi uvicorn sqlalchemy psycopg2-binary python-dotenv
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 RUN python -m compileall -q app && useradd --system --uid 10001 appuser

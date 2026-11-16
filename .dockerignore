@@ -9,3 +9,5 @@ coverage.xml
 htmlcov
 reports
 tests
+jenkins
+*.py[cod]
