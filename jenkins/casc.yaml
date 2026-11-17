@@ -39,3 +39,7 @@ jobs:
           }
         }
       }
+
+unclassified:
+  location:
+    url: "${JENKINS_PUBLIC_URL}"

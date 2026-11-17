@@ -14,6 +14,7 @@ pipeline {
     }
 
     environment {
+        PUBLICATION_STATUS = 'not-run'
         REPORT_DIR = 'reports'
         DIST_DIR = 'dist'
         // TEST_DATABASE_URL, NOTIFY_EMAIL, SMTP_* e DOCKERHUB_REPO vêm das variáveis de
@@ -25,6 +26,7 @@ pipeline {
             steps {
                 script {
                     def scmVars = checkout scm
+                    env.SHORT_COMMIT = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
                     env.CHECKED_OUT_BRANCH = scmVars.GIT_BRANCH ?: env.GIT_BRANCH ?: ''
                 }
                 sh 'rm -rf reports dist && mkdir -p reports dist'
@@ -92,6 +94,7 @@ pipeline {
                     usernameVariable: 'DOCKERHUB_USERNAME',
                     passwordVariable: 'DOCKERHUB_TOKEN'
                 )]) {
+                    script { env.PUBLICATION_STATUS = 'failed' }
                     sh '''
                         set -eu
                         set +x
@@ -105,6 +108,7 @@ pipeline {
                         docker push "$repo:latest"
                         docker push "$repo:${BUILD_NUMBER}-${SHORT_COMMIT}"
                     '''
+                    script { env.PUBLICATION_STATUS = 'published' }
                 }
             }
         }
@@ -119,15 +123,26 @@ pipeline {
                 // O destinatário vem da variável de ambiente NOTIFY_EMAIL (não é hardcoded).
                 stage('Notificação por e-mail') {
                     try {
-                        sh """
-                            python3 scripts/notify_email.py \
-                              --status "${currentBuild.currentResult}" \
-                              --job "${env.JOB_NAME}" \
-                              --build "${env.BUILD_NUMBER}" \
-                              --url "${env.BUILD_URL}" \
-                              --commit "${env.SHORT_COMMIT ?: 'n/a'}" \
-                              --branch "${env.CHECKED_OUT_BRANCH ?: 'n/a'}"
-                        """
+                        def buildUrl = env.BUILD_URL ?: ''
+                        if (!buildUrl && env.JENKINS_PUBLIC_URL) {
+                            def jobPath = env.JOB_NAME.split('/').collect {
+                                'job/' + java.net.URLEncoder.encode(it, 'UTF-8').replace('+', '%20')
+                            }.join('/')
+                            buildUrl = env.JENKINS_PUBLIC_URL.replaceAll('/+$', '') + "/${jobPath}/${env.BUILD_NUMBER}/"
+                        }
+                        withEnv([
+                            "NOTIFY_STATUS=${currentBuild.currentResult}",
+                            "NOTIFY_URL=${buildUrl}",
+                            "NOTIFY_DURATION=${(currentBuild.duration / 1000) as long}"
+                        ]) {
+                            sh '''
+                                python3 scripts/notify_email.py \
+                                  --status "$NOTIFY_STATUS" --job "$JOB_NAME" --build "$BUILD_NUMBER" \
+                                  --url "$NOTIFY_URL" --commit "${SHORT_COMMIT:-n/a}" \
+                                  --branch "${CHECKED_OUT_BRANCH:-n/a}" --duration-seconds "$NOTIFY_DURATION" \
+                                  --docker-repo "$DOCKERHUB_REPO" --publication-status "$PUBLICATION_STATUS"
+                            '''
+                        }
                     } catch (err) {
                         // Falha no envio não deve reprovar o build
                         echo "Não foi possível enviar o e-mail: ${err}"

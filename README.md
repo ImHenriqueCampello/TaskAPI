@@ -96,6 +96,7 @@ Use o `.env` criado anteriormente e configure:
 
 | Variáveis | Finalidade |
 |-----------|------------|
+| `JENKINS_PUBLIC_URL` | URL do Jenkins acessível ao destinatário; padrão `http://localhost:8080/` para uso no próprio computador |
 | `JENKINS_ADMIN_ID`, `JENKINS_ADMIN_PASSWORD` | Acesso ao Jenkins |
 | `GIT_REPO_URL` | Repositório utilizado pelo job |
 | `DOCKERHUB_REPO`, `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` | Repositório e credenciais para publicação |
